@@ -29,7 +29,7 @@ def channel_geometry(obj,recipe):
   for a,b in [(0,1),(1,2),(2,0)]:
    distance=math.dist(uvpoint(tri.loops[a]),uvpoint(tri.loops[b]))
    if distance>1e-6:ratios.append((linear@(old.vertices[tri.vertices[a]].co-old.vertices[tri.vertices[b]].co)).length/distance)
- assert ratios,'No resolved source UV-to-surface scale';depth=statistics.median(ratios)*.0006;source_normal=sum(((linear@(old.vertices[t.vertices[1]].co-old.vertices[t.vertices[0]].co)).cross(linear@(old.vertices[t.vertices[2]].co-old.vertices[t.vertices[0]].co)) for t in old.loop_triangles),Vector()).normalized();assert source_normal.length>.9,'Unresolved source cover normal';emit('source_depth_scale_diagnostics',force=True,relative_depth=depth,UV_world_ratio_min=min(ratios),UV_world_ratio_median=statistics.median(ratios),UV_world_ratio_max=max(ratios),source_dimensions=list(obj.dimensions));down=linear.inverted()@(-source_normal*depth);vertices=[];faces=[];materials=[];uv_values=[[] for _ in names];tile_count=0;max_uv_span=0;maximum_weight=0;moved=0
+ assert ratios,'No resolved source UV-to-surface scale';depth=statistics.median(ratios)*statistics.median(b-a for a,b,c in LANES)*.125;assert depth*1.5<=scale*.003,'Designed joint and backing depth exceed existing source envelope';source_normal=sum(((linear@(old.vertices[t.vertices[1]].co-old.vertices[t.vertices[0]].co)).cross(linear@(old.vertices[t.vertices[2]].co-old.vertices[t.vertices[0]].co)) for t in old.loop_triangles),Vector()).normalized();assert source_normal.length>.9,'Unresolved source cover normal';emit('source_depth_scale_diagnostics',force=True,relative_depth=depth,UV_world_ratio_min=min(ratios),UV_world_ratio_median=statistics.median(ratios),UV_world_ratio_max=max(ratios),source_dimensions=list(obj.dimensions));down=linear.inverted()@(-source_normal*depth);vertices=[];faces=[];materials=[];source_tri_ids=[];face_barycentrics=[];uv_values=[[] for _ in names];tile_count=0;max_uv_span=0;maximum_weight=0;moved=0
  def sample(point):return sample_channel(point)
  # Blender4.5 CDT API verified against official mathutils_geometry.cc.
  # Tile clipping avoids raster subdivision of long/repeated source UV spans.
@@ -63,14 +63,14 @@ def channel_geometry(obj,recipe):
     uvface=[tuple(result[0][i]) for i in face];center=tuple(sum(p[k] for p in uvface)/3 for k in range(2));matches=[t for t in triangles if min(bary(center,t[1],t[2]))>=-1e-6]
     if not matches:continue
     assert sum(min(bary(center,t[1],t[2]))>=1e-5 for t in matches)<=1,'Overlapping source UV triangles in cover:'+json.dumps(dict(face=uvface,center=center,matches=[dict(uv=t[1],den=t[2],bary=bary(center,t[1],t[2])) for t in matches]))
-    tri,uv,den=max(matches,key=lambda t:min(bary(center,t[1],t[2])));face_indices=[]
+    tri,uv,den=max(matches,key=lambda t:min(bary(center,t[1],t[2])));face_indices=[];corner_weights=[]
     for point in uvface:
-     blend=bary(point,uv,den);normal_local=sum((old.vertices[tri.vertices[j]].normal*blend[j] for j in range(3)),Vector()).normalized();normal_world=(linear.inverted().transposed()@normal_local).normalized();point_down=linear.inverted()@(-normal_world*depth);amount=sample(point);maximum_weight=max(maximum_weight,amount);position=tuple(sum(blend[j]*old.vertices[tri.vertices[j]].co[k] for j in range(3))-origin[k]+point_down[k]*amount for k in range(3));layers=tuple(tuple(sum(blend[j]*layer.data[tri.loops[j]].uv[k] for j in range(3)) for k in range(2)) for layer in old.uv_layers);vertex_key=(position,layers)
+     blend=bary(point,uv,den);corner_weights.append(blend);normal_local=sum((old.vertices[tri.vertices[j]].normal*blend[j] for j in range(3)),Vector()).normalized();normal_world=(linear.inverted().transposed()@normal_local).normalized();point_down=linear.inverted()@(-normal_world*depth);amount=sample(point);maximum_weight=max(maximum_weight,amount);position=tuple(sum(blend[j]*old.vertices[tri.vertices[j]].co[k] for j in range(3))-origin[k]+point_down[k]*amount for k in range(3));layers=tuple(tuple(sum(blend[j]*layer.data[tri.loops[j]].uv[k] for j in range(3)) for k in range(2)) for layer in old.uv_layers);vertex_key=(position,layers)
      if vertex_key not in chart_vertex_cache:
       chart_vertex_cache[vertex_key]=len(vertices);vertices.append(position);moved+=amount>1e-6
       for layer_index,value in enumerate(layers):uv_values[layer_index].append(value)
      face_indices.append(chart_vertex_cache[vertex_key])
-    faces.append(tuple(face_indices));materials.append(tri.material_index);assert len(vertices)<600000 and len(faces)<1000000,'Component geometry budget exceeded'
+    faces.append(tuple(face_indices));materials.append(tri.material_index);source_tri_ids.append(tri.index);face_barycentrics.append(corner_weights);assert len(vertices)<600000 and len(faces)<1000000,'Component geometry budget exceeded'
    tile_count+=tile_area;max_uv_span=max(max_uv_span,max_tx-min_tx,max_ty-min_ty);emit('globally_constrained_source_cover',force=True,generated_vertices=len(vertices),generated_faces=len(faces),source_triangles=len(triangles))
  else:
   for tri in old.loop_triangles:
@@ -118,6 +118,13 @@ def channel_geometry(obj,recipe):
    (directory/'source-context.json').write_text(json.dumps(dict(transformed_UV_bounds=bounds,maximum_slot_weight=maximum_weight,source_only_images=images,geometry_not_upgraded=True)))
   raise AssertionError('No physical slot recesses resolved; source context retained')
  mesh=bpy.data.meshes.new(old.name+'__physical_grate');mesh.from_pydata(vertices,[],faces);mesh.update()
+ assert recipe.get('prototype_source_tile_only') and len(source_tri_ids)==len(faces),'Parameter coverage requires constrained component chart path'
+ source_ids=mesh.attributes.new(name='source_parameter_triangle',type='INT',domain='FACE');source_parameters=mesh.attributes.new(name='source_parameter_barycentric',type='FLOAT_VECTOR',domain='CORNER')
+ for face,index,barycentric in zip(mesh.polygons,source_tri_ids,face_barycentrics):
+  source_ids.data[face.index].value=index
+  for loop,weights3 in zip(face.loop_indices,barycentric):source_parameters.data[loop].vector=weights3
+ obj['require_source_parameter_audit']=True
+
  for layer_index,name in enumerate(names):
   layer=mesh.uv_layers.new(name=name)
   for loop in mesh.loops:layer.data[loop.index].uv=uv_values[layer_index][loop.vertex_index]
@@ -165,4 +172,5 @@ SOURCE_ID='channel03-component00-c1ed206629e56cb23ac2880d'
 SOURCE_SHA256='c1428a5e6cf0dbfbe0171edb9d3761f5ef5d617c9dcc993ebc3ee3c930d3fec9'
 def apply(obj,recipe):
  assert recipe['procedure_id']==SOURCE_ID and recipe['source_sha256']==SOURCE_SHA256,'Wrong source for longitudinal channel procedure'
+ obj['parameter_diagnostic_directory']=recipe['_diagnostic_directory']
  return channel_geometry(obj,recipe)
