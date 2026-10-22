@@ -18,12 +18,12 @@ def rebuild(obj,recipe,root):
   attribute=obj.data.attributes.new(name='source_polygon_id',type='INT',domain='FACE')
   for polygon in obj.data.polygons:attribute.data[polygon.index].value=polygon.index
   obj['validate_source_face_provenance']=True
- bm=bmesh.new();bm.from_mesh(obj.data);scale=max(max(obj.dimensions),.001);tolerance=min(.00001,scale*.000001)/max(max(abs(v) for v in obj.scale),1e-8)
- 
- if recipe.get('reconstruction_mode') not in ['source_surface_refinement','dedicated_sign_panel','executable_mesh_program']:
-  bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=tolerance);bmesh.ops.dissolve_degenerate(bm,edges=list(bm.edges),dist=tolerance*.1)
- if recipe.get('reconstruction_mode')!='executable_mesh_program':bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces))
- bm.to_mesh(obj.data);bm.free();obj.data.update()
+ scale=max(max(obj.dimensions),.001);tolerance=min(.00001,scale*.000001)/max(max(abs(v) for v in obj.scale),1e-8)
+ if recipe.get('reconstruction_mode')!='executable_mesh_program':
+  bm=bmesh.new();bm.from_mesh(obj.data)
+  if recipe.get('reconstruction_mode') not in ['source_surface_refinement','dedicated_sign_panel']:
+   bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=tolerance);bmesh.ops.dissolve_degenerate(bm,edges=list(bm.edges),dist=tolerance*.1)
+  bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(obj.data);bm.free();obj.data.update()
  bpy.ops.object.select_all(action='DESELECT');obj.select_set(True);bpy.context.view_layer.objects.active=obj
  category=recipe['category'];is_drain=category=='ground' and 'drain' in obj.name.lower();is_kerb=category=='ground' and any(t in obj.name.lower() for t in ['curb','kerb','ripple']);is_tyre=any(t in obj.name.lower() for t in ['tyre','tire']) and 'single' in obj.name.lower();source_refinement=recipe.get('reconstruction_mode') in ['source_surface_refinement','dedicated_sign_panel','executable_mesh_program'];component_changes=execute_mesh_program(obj,recipe) if recipe.get('reconstruction_mode')=='executable_mesh_program' else sign_geometry(obj,recipe) if recipe.get('reconstruction_mode')=='dedicated_sign_panel' else refine_source_surface(obj) if source_refinement else armco_geometry(obj) if category=='barrier' and 'armco' in obj.name.lower() else tyre_geometry(obj) if is_tyre else kerb_geometry(obj,recipe) if is_kerb else drain_geometry(obj,recipe) if is_drain else [];changes=['separate_original_collision_preserved',('source_connectivity_preserved_without_cross_surface_welding' if source_refinement else 'scale_aware_duplicate_and_degenerate_repair'),'consistent_surface_normals'];extras=[collision];changes.extend(component_changes)
  rebuilt_bm=bmesh.new();rebuilt_bm.from_mesh(obj.data);bmesh.ops.recalc_face_normals(rebuilt_bm,faces=list(rebuilt_bm.faces));nonmanifold=sum(not e.is_manifold for e in rebuilt_bm.edges);rebuilt_bm.to_mesh(obj.data);rebuilt_bm.free();assert nonmanifold==0,'Reconstructed component has nonmanifold edges';changes.append('closed_manifold_and_outward_normals_checked')
