@@ -44,6 +44,7 @@ def rebuild(obj,recipe,root):
  assert len(obj.data.uv_layers)==before['uv_layers'],'UV layers lost'
  delta=max(abs(obj.dimensions[i]-before['bounds'][i]) for i in range(3));callback=recipe.get('_operator_progress_callback');callback(dict(stage='bounds_diagnostic',before_bounds=before['bounds'],after_bounds=list(obj.dimensions),delta=delta,relative_depth=obj.get('drain_relative_slot_depth'),source_normal=list(obj.get('drain_source_normal_world',[])))) if callback else None;assert delta<=max(.01,scale*.002),f'Silhouette bounds changed excessively: before={before["bounds"]}, after={list(obj.dimensions)}, delta={delta}'
  for poly in obj.data.polygons:assert 0<=poly.material_index<max(1,len(obj.data.materials)),'Material index out of range'
+ if recipe.get('source_fidelity_double_precision_origin'):obj['source_fidelity_double_precision_origin']=True
  fidelity=source_fidelity(obj,collision) if (is_kerb or is_drain or source_refinement) else None
  if fidelity:assert fidelity['source_profile_within_tolerance'],'Source surface distances exceed source-relative profile tolerance: '+str(fidelity)
  if source_refinement:assert fidelity['uv1_unambiguous_page_mismatches']==0,'Encoded UV1 page changed in source refinement'
