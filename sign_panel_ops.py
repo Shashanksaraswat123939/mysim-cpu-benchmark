@@ -18,7 +18,11 @@ def sign_geometry(obj,recipe):
    assert distance<span*.01,'Source includes unannotated support or separate component';previous=pairs.get(nearest)
    if previous is not None:assert (positions[previous]-p).length<=tol,'Ambiguous measured back rim'
    pairs[nearest]=i
- assert set(pairs)==set(frontvertices),'Measured rear rim incomplete';thicknesses=[abs((positions[k]-positions[v]).dot(normals[k])) for k,v in pairs.items()];thickness=statistics.median(thicknesses);assert min(thicknesses)>0 and max(thicknesses)/min(thicknesses)<1.1,'Nonuniform profile requires separate annotation';depth=thickness*.2;surfaces=[]
+ assert set(pairs)==set(frontvertices),'Measured rear rim incomplete'
+ # Open disconnected strips have ambiguous recalculated normals. The actual rear rim fixes orientation.
+ for i in frontvertices:
+  if (positions[i]-positions[pairs[i]]).dot(normals[i])<0:normals[i].negate()
+ thicknesses=[(positions[k]-positions[v]).dot(normals[k]) for k,v in pairs.items()];thickness=statistics.median(thicknesses);assert min(thicknesses)>0 and max(thicknesses)/min(thicknesses)<1.1,'Nonuniform profile requires separate annotation';depth=thickness*.2;surfaces=[]
  for face in mesh.polygons:
   corners=[]
   for i,loop in zip(face.vertices,face.loop_indices):corners.append(dict(position=tuple(positions[i]),u=float(mesh.uv_layers[0].data[loop].uv.x),uv=[tuple(layer.data[loop].uv) for layer in mesh.uv_layers],normal=tuple(normals[frontmap[i]]),front=weights[i]))
@@ -30,7 +34,16 @@ def sign_geometry(obj,recipe):
   for i in reversed(face.vertices):
    back=pairs[i];uv=vertex_uv[back];corners.append(dict(position=tuple(positions[back]),u=float(vertex_uv[i][0][0]),uv=uv,normal=tuple(normals[i]),front=0.0))
   surfaces.append(dict(corners=corners,source_polygon=-1))
- result=construct(surfaces,[k/8 for k in range(1,8)],1/512,depth,tol);folder=Path(recipe['_diagnostic_directory']);(folder/'sign-profile-topology.json').write_text(json.dumps({k:v for k,v in result.items() if k not in ['vertices','faces','corner_uv']},indent=2));assert not result['nonmanifold_edges'],'Sign source-profile shell has nonmanifold edges';assert result['changed_corner_occurrences']>0
+ centres=[(pixel+.5)/512 for pixel in [63,129,195,256,318,382,448]]
+ result=construct(surfaces,centres,1/512,depth,tol);folder=Path(recipe['_diagnostic_directory']);(folder/'sign-profile-topology.json').write_text(json.dumps({k:v for k,v in result.items() if k not in ['vertices','faces','corner_uv']},indent=2));assert not result['nonmanifold_edges'],'Sign source-profile shell has nonmanifold edges';assert result['changed_corner_occurrences']>0
+ target_u=centres[3];target_v=1.5;target=None;target_normal=None
+ for face in mesh.polygons:
+  if face.index not in frontfaces:continue
+  ids=list(face.vertices);uv=[mesh.uv_layers[0].data[i].uv.copy() for i in face.loop_indices];a,b,c=uv;det=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);assert abs(det)>1e-12
+  t=((target_u-a.x)*(c.y-a.y)-(target_v-a.y)*(c.x-a.x))/det;u=((b.x-a.x)*(target_v-a.y)-(b.y-a.y)*(target_u-a.x))/det;weights2=[1-t-u,t,u]
+  if min(weights2)>=-1e-8:
+   target=sum((positions[i]*w for i,w in zip(ids,weights2)),Vector());target_normal=sum((normals[i]*w for i,w in zip(ids,weights2)),Vector()).normalized();break
+ assert target is not None,'Joint close-up target not in original printed surface';target-=target_normal*depth
  old=mesh;new=old.copy();new.clear_geometry();new.from_pydata(result['vertices'],[],result['faces']);new.update()
  for layer in list(new.uv_layers):new.uv_layers.remove(layer)
  for index,original_layer in enumerate(old.uv_layers):
@@ -41,4 +54,4 @@ def sign_geometry(obj,recipe):
  if existing:new.attributes.remove(existing)
  attribute=new.attributes.new(name='source_polygon_id',type='INT',domain='FACE')
  for i,source_polygon in enumerate(result['source_polygons']):attribute.data[i].value=source_polygon
- obj.data=new;obj['validate_source_face_provenance']=True;obj['sign_measured_relative_depth']=depth;obj['sign_measured_backing_thickness']=thickness;obj['sign_joint_count']=7;obj['drain_source_normal_world']=list((obj.matrix_world.to_3x3().inverted().transposed()@sum(normals.values(),Vector()).normalized()).normalized());obj['sign_operator_scope']='one annotated original billboard body only; no invented fixtures';return ['source_billboard_front_and_four_profile_edges_reconstructed','seven_texture_evidenced_rounded_physical_panel_joints','rear_closed_at_original_measured_rim','original_curve_material_ST_and_all_UVs_preserved','no_invented_supports_fasteners_or_branding_changes']
+ obj.data=new;obj['validate_source_face_provenance']=True;obj['sign_measured_relative_depth']=depth;obj['sign_measured_backing_thickness']=thickness;obj['sign_joint_count']=7;obj['drain_source_normal_world']=list((obj.matrix_world.to_3x3().inverted().transposed()@target_normal).normalized());obj['drain_review_target_local']=list(target);obj['drain_review_span']=span*max(abs(v) for v in obj.scale)*.04;obj['sign_operator_scope']='one annotated original billboard body only; no invented fixtures';return ['source_billboard_front_and_four_profile_edges_reconstructed','seven_texture_evidenced_rounded_physical_panel_joints','rear_closed_at_original_measured_rim','original_curve_material_ST_and_all_UVs_preserved','no_invented_supports_fasteners_or_branding_changes']
