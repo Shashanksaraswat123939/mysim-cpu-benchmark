@@ -2,10 +2,20 @@ import math,json,statistics
 from pathlib import Path
 from mathutils import Vector
 from sign_profile_geometry import construct
-SUPPORTED='26d2a66fd51dc1e10a731ebb'
+SUPPORTED={'26d2a66fd51dc1e10a731ebb','e239e5bb0c4164e73b9487a4','17601e0a17d701965ee7ad44'}
 def sign_geometry(obj,recipe):
- assert recipe['procedure_id']==SUPPORTED,'Sign profile operator only validated against explicitly annotated source'
+ assert recipe['procedure_id'] in SUPPORTED,'Sign profile operator only validated against explicitly annotated source'
+ assert recipe['source_sha256']=='06fdd8a6d522c22d0951024067cf86ff0025c6ad55f61cbc9df41427c013b926','Unannotated source revision'
+ bindings=recipe['material_bindings'];assert len(bindings)==1
+ base=next(t for t in bindings[0]['textures'] if t['property']=='_BaseMap');assert base['path'].endswith('/prop_laguna_seca_billboard_ground/prop_laguna_seca_billboard_ground.png')
+ assert base['scale']=={'x':1.0,'y':-1.0} and base['offset']=={'x':0.0,'y':1.0},'Source texture transform changed'
  mesh=obj.data;assert len(mesh.vertices)==38 and len(mesh.polygons)==28,'Annotated billboard inventory changed';assert len(mesh.uv_layers)==2;frontfaces=set(range(10,18));frontvertices=sorted({i for p in mesh.polygons if p.index in frontfaces for i in p.vertices});assert len(frontvertices)==10;positions=[v.co.copy() for v in mesh.vertices];span=max(max(v[a] for v in positions)-min(v[a] for v in positions) for a in range(3));tol=span*1e-8;normals={i:Vector() for i in frontvertices}
+ areas=[]
+ for face in mesh.polygons:
+  uv=[mesh.uv_layers[0].data[j].uv for j in face.loop_indices];assert len(uv)==3
+  a,b,c=uv;area=abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))*.5;areas.append(area)
+  assert (area>1e-8)==(face.index in frontfaces),'Printed-front polygon annotation mismatch'
+ assert abs(sum(areas)-1.0)<1e-6,'Printed-front UV domain coverage changed'
  for face in mesh.polygons:
   if face.index in frontfaces:
    for i in face.vertices:normals[i]+=face.normal*face.area
