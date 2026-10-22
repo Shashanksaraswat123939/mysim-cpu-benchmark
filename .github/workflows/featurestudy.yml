@@ -1,0 +1,41 @@
+name: MySim source-specific feature design evidence
+run-name: MySim feature design ${{ inputs.dispatch_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      dispatch_id:
+        required: true
+      groups:
+        required: true
+      wave:
+        required: true
+permissions:
+  contents: write
+jobs:
+  design:
+    name: ${{ matrix.group }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        group: ${{ fromJSON(inputs.groups) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender CPU runtime
+        run: |
+          curl --fail --location --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 30 --max-time 600 https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz -o /tmp/blender.tar.xz
+          mkdir -p /tmp/blender
+          tar -xf /tmp/blender.tar.xz -C /tmp/blender --strip-components=1
+      - name: Measure and render one actual source feature layout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WAVE: ${{ inputs.wave }}
+        run: /tmp/blender/blender --background --threads 4 --python-exit-code 1 --python feature_study.py -- ${{ matrix.group }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: design-evidence-${{ matrix.group }}
+          path: results/${{ matrix.group }}/
+          if-no-files-found: ignore
