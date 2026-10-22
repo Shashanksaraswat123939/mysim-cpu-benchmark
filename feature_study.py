@@ -2,6 +2,7 @@
 import bpy,bmesh,sys,os,json,time,hashlib,zipfile,resource,math,statistics
 from pathlib import Path
 from mathutils import Vector
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from release_transport import public_download,release_upload
 from detail_ops import make_material
 from rebuild_ops import render_review
