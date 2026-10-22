@@ -55,5 +55,5 @@ def source_fidelity(candidate,source,limit=1200):
     from pathlib import Path
     bpy.data.libraries.write(str(Path(candidate['parameter_diagnostic_directory'])/'rejected-source-parameters.blend'),{candidate,source},compress=True)
    raise
-  result['source_parameter_audit']=audit;result['nearest_projection_uv0_max_error']=result['uv0_max_error'];result['nearest_projection_uv1_max_error']=result['uv1_max_error'];result.update({k:audit[k] for k in ['uv0_samples','uv0_max_error','uv1_samples','uv1_max_error','uv1_unambiguous_page_samples','uv1_unambiguous_page_mismatches']});result['strict_UV_measure']='All output corners against their original triangle source parameters'
+  result['source_parameter_audit']=audit;result['nearest_projection_uv0_max_error']=result['uv0_max_error'];result['nearest_projection_uv1_max_error']=result['uv1_max_error'];result.update({k:audit[k] for k in ['uv0_samples','uv0_max_error','uv0_mean_error','uv1_samples','uv1_max_error','uv1_mean_error','uv1_unambiguous_page_samples','uv1_unambiguous_page_mismatches']});result['strict_UV_measure']='All output corners against their original triangle source parameters'
  return result

@@ -44,6 +44,7 @@ def rebuild(obj,recipe,root):
  assert len(obj.data.uv_layers)==before['uv_layers'],'UV layers lost'
  delta=max(abs(obj.dimensions[i]-before['bounds'][i]) for i in range(3));callback=recipe.get('_operator_progress_callback');callback(dict(stage='bounds_diagnostic',before_bounds=before['bounds'],after_bounds=list(obj.dimensions),delta=delta,relative_depth=obj.get('drain_relative_slot_depth'),source_normal=list(obj.get('drain_source_normal_world',[])))) if callback else None;assert delta<=max(.01,scale*.002),f'Silhouette bounds changed excessively: before={before["bounds"]}, after={list(obj.dimensions)}, delta={delta}'
  for poly in obj.data.polygons:assert 0<=poly.material_index<max(1,len(obj.data.materials)),'Material index out of range'
+ if recipe.get('review_full_views_follow_source_normal'):obj['review_full_views_follow_source_normal']=True
  if recipe.get('source_fidelity_double_precision_origin'):obj['source_fidelity_double_precision_origin']=True
  fidelity=source_fidelity(obj,collision) if (is_kerb or is_drain or source_refinement) else None
  if fidelity:assert fidelity['source_profile_within_tolerance'],'Source surface distances exceed source-relative profile tolerance: '+str(fidelity)
@@ -74,7 +75,10 @@ def render_review(obj,extra,path,detail_only=False):
   light_tangent=review_normal.cross(Vector((0,0,1))) if abs(review_normal.z)<.9 else review_normal.cross(Vector((0,1,0)));light_tangent.normalize();lamp.location=centre+review_normal*radius*2+light_tangent*radius;lamp.rotation_euler=(centre-lamp.location).to_track_quat('-Z','Y').to_euler()
  camdata=bpy.data.cameras.new('Review camera');cam=bpy.data.objects.new('Review camera',camdata);scene.collection.objects.link(cam);scene.camera=cam;camdata.clip_start=radius*.001;camdata.clip_end=radius*100;camdata.type='ORTHO';camdata.ortho_scale=radius*1.5
  images=[]
- for i,direction in enumerate([] if detail_only else [(1,-1,.8),(-1,-1,.35),(0,0,2)]):
+ directions=[Vector((1,-1,.8)),Vector((-1,-1,.35)),Vector((0,0,2))]
+ if obj.get('review_full_views_follow_source_normal') and review_normal is not None:
+  front=review_normal.normalized();side=front.cross(Vector((0,0,1))) if abs(front.z)<.9 else front.cross(Vector((0,1,0)));side.normalize();up=front.cross(side).normalized();directions=[front+side*.45+up*.25,front-side*.45+up*.25,front]
+ for i,direction in enumerate([] if detail_only else directions):
   cam.location=centre+Vector(direction)*radius*2;cam.rotation_euler=(centre-cam.location).to_track_quat('-Z','Y').to_euler();scene.render.filepath=str(path.parent/(path.stem+f'-review-{i}.png'));bpy.ops.render.render(write_still=True);images.append(scene.render.filepath)
  # Close-up evidence complements full silhouettes of long, thin track assets.
  normal_matrix=obj.matrix_world.to_3x3().inverted().transposed()
