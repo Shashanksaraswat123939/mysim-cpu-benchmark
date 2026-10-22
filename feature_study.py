@@ -35,7 +35,18 @@ try:
  obj.data.materials.clear()
  for m in recipe['material_bindings']:obj.data.materials.append(make_material(m,r/'wave-input',recipe['category']))
  images=render_review(obj,[],out/recipe['procedure_id']);assert fingerprint(obj)==before,'Source positions/topology/UV/world placement changed during design study'
- anatomy=dict(procedure_id=recipe['procedure_id'],mesh=recipe['mesh'],source_sha256=source['sha256'],source_fingerprint=before,vertices_local=[list(v.co) for v in mesh.vertices],world_matrix=[list(row) for row in matrix],components=components,polygons=polygons,material_bindings=recipe['material_bindings'],design_questions=job['design_questions'],no_world_unit_claim=True,source_geometry_unchanged=True)
+ # Read-only geometric incidence: coincident source positions may have separate UV vertices.
+ # Preserve every source vertex/loop; this index is evidence only, never mesh welding.
+ position_groups={}
+ for vertex in mesh.vertices:position_groups.setdefault(tuple(vertex.co),[]).append(vertex.index)
+ group_ids={v:i for i,group in enumerate(position_groups.values()) for v in group};geometric_edges={}
+ for polygon in mesh.polygons:
+  ids=list(polygon.vertices)
+  for a,b in zip(ids,ids[1:]+ids[:1]):
+   key=tuple(sorted((group_ids[a],group_ids[b])));geometric_edges.setdefault(key,[]).append(polygon.index)
+ incidence=[dict(position_group_edge=list(key),source_polygons=faces) for key,faces in geometric_edges.items()]
+ profile_evidence=dict(exact_position_groups=[dict(position=list(point),source_vertices=ids) for point,ids in position_groups.items()],edge_incidence=incidence,boundary_edges=[e for e in incidence if len(e['source_polygons'])==1],nonmanifold_edges=[e for e in incidence if len(e['source_polygons'])>2],warning='Exact coincident-position index only; UV seams and original vertices unchanged. Cross-section dimensions require member-specific annotation; no inferred bolts.')
+ anatomy=dict(procedure_id=recipe['procedure_id'],mesh=recipe['mesh'],source_sha256=source['sha256'],source_fingerprint=before,vertices_local=[list(v.co) for v in mesh.vertices],world_matrix=[list(row) for row in matrix],components=components,polygons=polygons,material_bindings=recipe['material_bindings'],design_questions=job['design_questions'],no_world_unit_claim=True,source_geometry_unchanged=True,profile_evidence=profile_evidence)
  anatomy_path=out/(recipe['procedure_id']+'-feature-anatomy.json');anatomy_path.write_text(json.dumps(anatomy,indent=2));report.update(state='COMPLETE_DESIGN_EVIDENCE',processed=1,records=[dict(procedure_id=recipe['procedure_id'],mesh=recipe['mesh'],feature_anatomy=anatomy_path.name,images=[Path(x).name for x in images],source_geometry_unchanged=True,source_fingerprint=before,component_count=len(components),automated_checks_passed=True,scope='source_feature_design_study',geometry_upgrade=False,semantic_operator_implemented=False)])
 except Exception as error:
  report.update(state='DESIGN_STUDY_FAILED',failed=1,failures=[dict(procedure_id=recipe['procedure_id'],error=str(error))])
